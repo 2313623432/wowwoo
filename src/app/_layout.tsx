@@ -2,8 +2,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { PhoneModeProvider } from "@/contexts/PhoneModeContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import { Stack } from "expo-router";
-import "react-native-gesture-handler";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { Platform } from "react-native";
 import * as Sentry from "@sentry/react-native";
 import { initJPush } from "@/utils/jpush";
 import { useEffect } from "react";
@@ -30,40 +29,52 @@ function RootLayout() {
   useEffect(() => {
     initJPush();
   }, []);
+
+  const content = (
+    <AuthProvider>
+      <PhoneModeProvider>
+        <ToastProvider>
+          <Stack>
+            <Stack.Screen
+              name="index"
+              options={{
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name="(auth)"
+              options={{
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name="(tabs)"
+              options={{
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name="(admin)"
+              options={{
+                headerShown: true,
+              }}
+            />
+          </Stack>
+        </ToastProvider>
+      </PhoneModeProvider>
+    </AuthProvider>
+  );
+
+  if (Platform.OS === "web") {
+    return content;
+  }
+
+  // GestureHandlerRootView is only needed on native; on web it intercepts
+  // mouse/pointer events and breaks TouchableOpacity.
+  const { GestureHandlerRootView } = require("react-native-gesture-handler");
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <PhoneModeProvider>
-          <ToastProvider>
-            <Stack>
-              <Stack.Screen
-                name="index"
-                options={{
-                  headerShown: false,
-                }}
-              />
-              <Stack.Screen
-                name="(auth)"
-                options={{
-                  headerShown: false,
-                }}
-              />
-              <Stack.Screen
-                name="(tabs)"
-                options={{
-                  headerShown: false,
-                }}
-              />
-              <Stack.Screen
-                name="(admin)"
-                options={{
-                  headerShown: true,
-                }}
-              />
-            </Stack>
-          </ToastProvider>
-        </PhoneModeProvider>
-      </AuthProvider>
+      {content}
     </GestureHandlerRootView>
   );
 }
