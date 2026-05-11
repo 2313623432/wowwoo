@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "642478706416",
+    "project_id": "wowwoo-4675f",
+    "storage_bucket": "wowwoo-4675f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:642478706416:android:78493d082c444236707c35",
+        "android_client_info": {
+          "package_name": "com.cheeliu.wowwoo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAojUWxB_n0oU1YGSrPlevMY8WcSbFTwBo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chat Console</title>
+    <style>
+      :root {
+        --bg: #0f1222;
+        --panel: #151a2e;
+        --panel-2: #1a2038;
+        --text: #e8ecff;
+        --muted: #9aa4c7;
+        --accent: #56d1ff;
+        --bubble-in: #1f2a4a;
+        --bubble-out: #2a3d6b;
+        --border: #2a3354;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: radial-gradient(
+          1200px 600px at 10% -10%,
+          #1b2240 0%,
+          var(--bg) 60%
+        );
+        color: var(--text);
+        font-family:
+          ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      header .meta {
+        font-size: 12px;
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 12px;
+        overflow: hidden;
+      }
+      #chat {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .bubble {
+        max-width: 80%;
+        padding: 10px 12px;
+        border-radius: 12px;
+        line-height: 1.4;
+        word-break: break-word;
+        border: 1px solid var(--border);
+      }
+      .in {
+        background: var(--bubble-in);
+        align-self: flex-start;
+      }
+      .out {
+        background: var(--bubble-out);
+        align-self: flex-end;
+      }
+      .meta {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .composer {
+        display: flex;
+        gap: 8px;
+        padding: 12px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+      }
+      textarea,
+      input {
+        width: 100%;
+        background: #0f1326;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px;
+        font-size: 14px;
+      }
+      button {
+        background: var(--accent);
+        color: #0a1022;
+        border: none;
+        padding: 10px 14px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .status {
+        font-size: 12px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>Chat Console</strong>
+      <span class="meta" id="meta"></span>
+    </header>
+    <main>
+      <div id="chat"></div>
+      <div class="composer">
+        <textarea id="replyInput" rows="2" placeholder="输入回复..."></textarea>
+        <button id="sendBtn">发送</button>
+      </div>
+      <div class="composer">
+        <input id="resumeReason" placeholder="退出 human_mode 的理由..." />
+        <button id="resumeBtn">退出 human_mode</button>
+      </div>
+      <div class="status" id="status"></div>
+    </main>
+
+    <script>
+      const params = new URLSearchParams(location.search);
+      const platform = params.get("platform");
+      const actor_id = params.get("actor_id");
+      const audience_id = params.get("audience_id");
+      const apiBase = params.get("api_base") || "http://127.0.0.1:10053";
+
+      const chatEl = document.getElementById("chat");
+      const metaEl = document.getElementById("meta");
+      const statusEl = document.getElementById("status");
+      const replyInput = document.getElementById("replyInput");
+      const sendBtn = document.getElementById("sendBtn");
+      const resumeReason = document.getElementById("resumeReason");
+      const resumeBtn = document.getElementById("resumeBtn");
+
+      const state = {
+        messages: [],
+        loadingHistory: false,
+        polling: null,
+        reachedTop: false,
+      };
+
+      function setStatus(text) {
+        statusEl.textContent = text || "";
+      }
+
+      function guardParams() {
+        if (!platform || !actor_id || !audience_id) {
+          setStatus("缺少参数：platform / actor_id / audience_id");
+          sendBtn.disabled = true;
+          resumeBtn.disabled = true;
+          return false;
+        }
+        metaEl.textContent = `${platform} | ${actor_id} -> ${audience_id}`;
+        return true;
+      }
+
+      function buildUrl(path, query) {
+        const q = new URLSearchParams(query);
+        return `${apiBase}${path}?${q.toString()}`;
+      }
+
+      function appendMessages(msgs, toEnd) {
+        if (!msgs.length) return;
+        const known = new Set(state.messages.map((m) => m.id));
+        const filtered = msgs.filter((m) => !known.has(m.id));
+        if (!filtered.length) return;
+        state.messages = toEnd
+          ? state.messages.concat(filtered)
+          : filtered.concat(state.messages);
+        renderMessages();
+        if (toEnd) {
+          chatEl.scrollTop = chatEl.scrollHeight;
+        }
+      }
+
+      function renderMessages() {
+        chatEl.innerHTML = "";
+        for (const msg of state.messages) {
+          const bubble = document.createElement("div");
+          bubble.className = `bubble ${msg.platform_sender_account_id === actor_id ? "out" : "in"}`;
+          bubble.innerHTML = `
+            <div>${msg.content_text || "[非文本]"}</div>
+            <div class="meta">${new Date(msg.platform_sent_at).toLocaleString()}</div>
+          `;
+          chatEl.appendChild(bubble);
+        }
+      }
+
+      async function fetchLatest() {
+        if (!state.messages.length) {
+          const url = buildUrl("/chat/messages", {
+            platform,
+            actor_id,
+            audience_id,
+          });
+          const res = await fetch(url);
+          const data = await res.json();
+          appendMessages(data.data || [], true);
+          return;
+        }
+        const last = state.messages[state.messages.length - 1];
+        const url = buildUrl("/chat/messages", {
+          platform,
+          actor_id,
+          audience_id,
+          anchor_time: last.platform_sent_at,
+          direction: "after",
+        });
+        const res = await fetch(url);
+        const data = await res.json();
+        appendMessages(data.data || [], true);
+      }
+
+      async function fetchHistory() {
+        if (state.loadingHistory || !state.messages.length) return;
+        state.loadingHistory = true;
+        const first = state.messages[0];
+        const url = buildUrl("/chat/messages", {
+          platform,
+          actor_id,
+          audience_id,
+          anchor_time: first.platform_sent_at,
+          direction: "before",
+        });
+        try {
+          const res = await fetch(url);
+          const data = await res.json();
+          const before = chatEl.scrollHeight;
+          appendMessages(data.data || [], false);
+          const after = chatEl.scrollHeight;
+          chatEl.scrollTop += after - before;
+          if (!(data.data || []).length) {
+            state.reachedTop = true;
+          }
+        } finally {
+          state.loadingHistory = false;
+        }
+      }
+
+      chatEl.addEventListener("scroll", () => {
+        if (chatEl.scrollTop < 80 && !state.reachedTop) {
+          fetchHistory();
+        }
+      });
+
+      sendBtn.addEventListener("click", async () => {
+        const text = replyInput.value.trim();
+        if (!text) return;
+        sendBtn.disabled = true;
+        try {
+          const res = await fetch(`${apiBase}/chat/reply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              platform,
+              actor_id,
+              audience_id,
+              message_type: "text",
+              content_text: text,
+            }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          replyInput.value = "";
+          setStatus("已发送");
+          await fetchLatest();
+        } catch (err) {
+          setStatus(`发送失败：${err}`);
+        } finally {
+          sendBtn.disabled = false;
+        }
+      });
+
+      resumeBtn.addEventListener("click", async () => {
+        const reason = resumeReason.value.trim();
+        if (!reason) {
+          setStatus("请填写退出 human_mode 的理由");
+          return;
+        }
+        resumeBtn.disabled = true;
+        try {
+          const res = await fetch(`${apiBase}/chat/human_resume`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              platform,
+              actor_id,
+              audience_id,
+              reason,
+            }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          resumeReason.value = "";
+          setStatus("已提交 human_resume");
+        } catch (err) {
+          setStatus(`human_resume 失败：${err}`);
+        } finally {
+          resumeBtn.disabled = false;
+        }
+      });
+
+      async function start() {
+        if (!guardParams()) return;
+        await fetchLatest();
+        state.polling = setInterval(fetchLatest, 5000);
+      }
+
+      start();
+    </script>
+  </body>
+</html>
